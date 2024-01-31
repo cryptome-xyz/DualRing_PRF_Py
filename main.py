@@ -487,21 +487,27 @@ def DualRing_PRF_sign(pp, PK, msg, sk, ind):
     MT_index = []
     com_sd_mpc = []
     com_sd_mask = []
+    h_1_second_half = h_1[16:]
+    # calculate the signature sizes
     for e in range(tau):
-        path_seed_mpc.append(tree_based_PRG_open(unopened_N[e], mpc_tree[e]))
-        path_seed_mask.append(tree_based_PRG_open(unopened_M[e], mask_tree[e]))
-        path_mask_share.append(tree_based_PRG_open(unopened_N[e], mask_share_tree_lists[e][unopened_M[e]]))
-        path_perm.append(tree_based_PRG_open(unopened_M[e], perm_tree[e]))
+        path_seed_mpc_e = tree_based_PRG_open(unopened_N[e], mpc_tree[e])
+        path_seed_mpc.append(path_seed_mpc_e)
+        path_seed_mask_e = tree_based_PRG_open(unopened_M[e], mask_tree[e])
+        path_seed_mask.append(path_seed_mask_e)
+        path_mask_share_e = tree_based_PRG_open(unopened_N[e], mask_share_tree_lists[e][unopened_M[e]])
+        path_mask_share.append(path_mask_share_e)
+        path_perm_e = tree_based_PRG_open(unopened_M[e], perm_tree[e])
+        path_perm.append(path_perm_e)
         ind_e = permuted_user_ind[e][unopened_M[e]].index(ind)
         MT_index.append(ind_e)
         # print(ind_e)
         # MT_leaf.append(permuted_com_delta[e][unopened_M[e]][ind_e])
-        MT_proof.append(compute_auth_path(acc_tree[e][unopened_M[e]], ind_e))
+        MT_proof_e = compute_auth_path(acc_tree[e][unopened_M[e]], ind_e)
+        MT_proof.append(MT_proof_e)
         # print(MT_proof[e])
         delta_I.append(delta_I_pi[e][unopened_M[e]])
         com_sd_mpc.append(com_mpc_sd_list[e][unopened_N[e]])
         com_sd_mask.append(com_mask_sd_list[e][unopened_N[e]][unopened_M[e]])
-    h_1_second_half = h_1[16:]
     print("Phase 8 running time: {} seconds".format(time.time() - st))
     print('-' * 50)
 
@@ -529,6 +535,37 @@ def DualRing_PRF_sign(pp, PK, msg, sk, ind):
     }
     print("Signing running time: {} seconds".format(time.time() - sign_time))
     print('-' * 50)
+
+    total_bits = 0
+
+
+    for items in sig.values():
+        if isinstance(items, bytes):
+            bits = len(items) * 8
+            total_bits += bits
+        else:
+            for item in items:
+                if isinstance(item, bytes):
+                    bits = len(item) * 8
+                    total_bits += bits
+                elif isinstance(item, list):
+                    bits = get_bit_length_of_list(item)
+                    total_bits += bits
+                elif isinstance(item, int):
+                    bits = item.bit_length()
+                    total_bits += bits
+                elif isinstance(item, dict):
+                    bits = get_bit_length_of_dict(item)
+                    total_bits += bits
+                else:
+                    total_bits += Integer(item).bit_length()
+    print("Signature size is (bits)", total_bits)
+    print('-'*50)
+
+
+
+
+
     return sig
 
 
@@ -779,11 +816,16 @@ def main():
     # 7: test set with small but insecure parameters
 
     pp = DualRing_PRF_setup(4)
-    key1 = DualRing_PRF_KeyGen(pp)
+    # key1 = DualRing_PRF_KeyGen(pp)
     key2 = DualRing_PRF_KeyGen(pp)
     # key3 = DualRing_PRF_KeyGen(pp)
     # key4 = DualRing_PRF_KeyGen(pp)
-    PK = [key1[1], key2[1]]
+
+    ell = 8
+    PK = []
+    for i in range(ell):
+        PK.append(key2[1])
+
     msg = "Hello World"
     sig = DualRing_PRF_sign(pp, PK, msg, key2[0], 1)
     DualRing_PRF_verify(pp, PK, msg, sig)

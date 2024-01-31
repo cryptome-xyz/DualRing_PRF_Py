@@ -70,9 +70,7 @@ def tree_based_PRG(seed, depth, output_bytes):
         values = []
         for i in range(2 ** level):
             parent = tree[level][i]
-            left_child, right_child = shake_128_func(parent, 2 * output_bytes)[:16], shake_128_func(parent,
-                                                                                                    2 * output_bytes)[
-                                                                                     16:]
+            left_child, right_child = shake_128_func(parent, 2 * output_bytes)[:16], shake_128_func(parent, 2 * output_bytes)[16:]
             values.extend([left_child, right_child])
         tree[level + 1] = values
     return tree
@@ -240,3 +238,24 @@ def recompute_MT_root(leaf, randomness, auth_path, index, length):
         index = index // 2
 
     return current_hash
+
+def get_bit_length_of_dict(input_dict):
+    total_bits = 0
+    for key, value in input_dict.items():
+        key_bits = key.bit_length()
+        value_bits = len(value) * 8
+        total_bits += key_bits + value_bits
+    return total_bits
+
+def get_bit_length_of_list(input_list):
+     #for item in input_list:
+        # print("item", item)
+         #print("type",type(item))
+         #print(sys.getsizeof(item))
+    bits = 0
+    for item in input_list:
+        if isinstance(item, bytes):
+            bits += len(item) * 8
+        else:
+            bits += Integer(item).bit_length()
+    return bits
