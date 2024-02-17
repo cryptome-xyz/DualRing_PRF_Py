@@ -70,7 +70,8 @@ def tree_based_PRG(seed, depth, output_bytes):
         values = []
         for i in range(2 ** level):
             parent = tree[level][i]
-            left_child, right_child = shake_128_func(parent, 2 * output_bytes)[:16], shake_128_func(parent, 2 * output_bytes)[16:]
+            children = shake_128_func(parent, 2 * output_bytes)
+            left_child, right_child = children[:16], children[16:]
             values.extend([left_child, right_child])
         tree[level + 1] = values
     return tree
