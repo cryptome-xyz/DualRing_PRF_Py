@@ -18,39 +18,39 @@ def DualRing_PRF_setup(param_choice):
     # get program start time
     st = time.time()
     if param_choice == 1:
-        B = 12
-        N = 32
-        tau = 58
+        B = 13
+        N = 16
+        tau = 57
         t = 2
         L = 32768
     elif param_choice == 2:
-        B = 11
-        N = 128
-        tau = 52
+        B = 10
+        N = 64
+        tau = 51
         t = 2
         L = 32768
     elif param_choice == 3:
-        B = 11
+        B = 10
         N = 512
-        tau = 47
+        tau = 45
         t = 2
         L = 32768
     elif param_choice == 4:
-        B = 4
-        N = 32
-        tau = 49
+        B = 7
+        N = 16
+        tau = 46
         t = 254
         L = 4096
     elif param_choice == 5:
-        B = 6
-        N = 128
-        tau = 38
+        B = 9
+        N = 64
+        tau = 34
         t = 254
         L = 4096
     elif param_choice == 6:
-        B = 6
-        N = 512
-        tau = 34
+        B = 10
+        N = 256
+        tau = 27
         t = 254
         L = 4096
     elif param_choice == 7:
@@ -66,7 +66,7 @@ def DualRing_PRF_setup(param_choice):
     p = 2 ** 127 - 1
     Fp = GF(p)
     g = Fp.primitive_element()
-    M = 1024
+    M = 512
     if param_choice == 7:
         M = 16
     listI = []
@@ -152,90 +152,96 @@ def DualRing_PRF_sign(pp, PK, msg, sk, ind):
     # conver the integer to 256 bits binary string
     salt = os.urandom(32)
     # pick random challenges for non-signers
-    user_ch = []
-    challenges = []  # ell lists of challenges, where each list has tau lists, where each list has B indices in [0,L-1]
+    user_ch = [None] * ell
+    challenges = [
+                     None] * ell  # ell lists of challenges, where each list has tau lists, where each list has B indices in [0,L-1]
     for l in range(ell):
         if l == ind:
-            user_ch.append(b'')
-            challenges.append([])
+            user_ch[l] = b''
+            challenges[l] = []
         else:
             user_random_seed = os.urandom(16)
-            user_ch.append(user_random_seed)
+            user_ch[l] = user_random_seed
             output = expand_to_index_elements(user_random_seed, tau * B, L)
-            challenges.append([output[i: i + B] for i in range(0, len(output), B)])
-    com_mpc_sd_list = []
-    com_mask_sd_list = []
-    T = []
-    delta_k_list = []
-    delta_c_list = []
-
-    mask_share_tree_lists = []
-    sum_r_shares = []
-    list_share_mpc = []
-    mpc_tree = []
-    mask_tree = []
-    sum_r_shares = []  # tau lists with each list has B elements
+            challenges[l] = [output[i: i + B] for i in range(0, len(output), B)]
+    com_mpc_sd_list = [None] * tau
+    com_mask_sd_list = [None] * tau
+    T = [None] * tau
+    delta_k_list = [None] * tau
+    delta_c_list = [None] * tau
+    log_M = log(M, 2)
+    log_N = log(N, 2)
+    mpc_share_number = B + 4
+    ind_of_a = B + 1
+    ind_of_b = B + 2
+    ind_of_c = B + 3
+    mask_share_tree_lists = [None] * tau
+    # sum_r_shares = []
+    list_share_mpc = [None] * tau
+    mpc_tree = [None] * tau
+    mask_tree = [None] * tau
+    sum_r_shares = [None] * tau  # tau lists with each list has B elements
     for e in range(tau):
         # sample mask root seed
         sd_mask_e = os.urandom(16)
-        mask_share_tree_e = []
+        # mask_share_tree_e = []
         # expand sd_mask_e
-        sd_mask_e_tree = tree_based_PRG(sd_mask_e, log(M, 2), 16)  # leafs are at log(M,2) index
-        mask_tree.append(sd_mask_e_tree)
-        mask_share_tree_list = []  # a list of M trees, where each tree has N leaves
+        sd_mask_e_tree = tree_based_PRG(sd_mask_e, log_M, 16)  # leafs are at log(M,2) index
+        mask_tree[e] = sd_mask_e_tree
+        mask_share_tree_list = [None] * M  # a list of M trees, where each tree has N leaves
         for k in range(M):
-            mask_share_tree_list.append(tree_based_PRG(sd_mask_e_tree[log(M, 2)][k], log(N, 2), 16))
+            mask_share_tree_list[k] = tree_based_PRG(sd_mask_e_tree[log_M][k], log_N, 16)
             # print(mask_share_tree_list[k][log(N, 2)])
-        mask_share_tree_lists.append(mask_share_tree_list)
+        mask_share_tree_lists[e] = mask_share_tree_list
         # sample MPC root seed
         sd_mpc_e = os.urandom(16)
         # expand sd_mpc with leaves N
-        sd_mpc_mpc_e_tree = tree_based_PRG(sd_mpc_e, log(N, 2), 16)  # a tree with N leaves
-        mpc_tree.append(sd_mpc_mpc_e_tree)
+        sd_mpc_mpc_e_tree = tree_based_PRG(sd_mpc_e, log_N, 16)  # a tree with N leaves
+        mpc_tree[e] = sd_mpc_mpc_e_tree
         # expand seed to MPC shares
-        share_mpc_e = []  # a list of N shares
+        share_mpc_e = [None] * N  # a list of N shares
         sum_key_share = 0
         sum_a_share = 0
         sum_b_share = 0
         sum_c_share = 0
-        temp_com_mpc_sd_list = []
-        temp_com_mask_list1 = []
+        temp_com_mpc_sd_list = [None] * N
+        temp_com_mask_list1 = [None] * N
         sum_r_shares_e = [0] * B
         for i in range(N):
-            sd_mpc = sd_mpc_mpc_e_tree[log(N, 2)][i]
+            sd_mpc = sd_mpc_mpc_e_tree[log_N][i]
             # each share [0]: key share; [1],...,[B]: randomness share; [B + 1] share of a; [B + 2] share of b; [B + 3] share of c
-            share_mpc = expand_to_Fp_elements(sd_mpc, B + 4, p, 16)
-            share_mpc_e.append(share_mpc)
+            share_mpc = expand_to_Fp_elements(sd_mpc, mpc_share_number, p, 16)
+            share_mpc_e[i] = share_mpc
             sum_key_share += share_mpc[0]
-            sum_a_share += share_mpc[B + 1]
-            sum_b_share += share_mpc[B + 2]
-            sum_c_share += share_mpc[B + 3]
+            sum_a_share += share_mpc[ind_of_a]
+            sum_b_share += share_mpc[ind_of_b]
+            sum_c_share += share_mpc[ind_of_c]
             for b in range(B):
                 sum_r_shares_e[b] += share_mpc[b + 1]
             # commit to  MPC seeds
-            temp_com_mpc_sd_list.append(hash_commit(salt, e, 0, i, sd_mpc))
+            temp_com_mpc_sd_list[i] = hash_commit(salt, e, 0, i, sd_mpc)
             # commit to mask shares
-            temp_com_mask_list2 = []
+            temp_com_mask_list2 = [None] * M
             for k in range(M):
-                sd_mask = mask_share_tree_list[k][log(N, 2)][i]
-                temp_com_mask_list2.append(hash_commit(salt, e, k, i, sd_mask))
-            temp_com_mask_list1.append(temp_com_mask_list2)
-        com_mpc_sd_list.append(temp_com_mpc_sd_list)
-        com_mask_sd_list.append(temp_com_mask_list1)
-        sum_r_shares.append(sum_r_shares_e)
+                sd_mask = mask_share_tree_list[k][log_N][i]
+                temp_com_mask_list2[k] = hash_commit(salt, e, k, i, sd_mask)
+            temp_com_mask_list1[i] = temp_com_mask_list2
+        com_mpc_sd_list[e] = temp_com_mpc_sd_list
+        com_mask_sd_list[e] = temp_com_mask_list1
+        sum_r_shares[e] = sum_r_shares_e
         # compute key adjustments
         delta_K_e = sk - sum_key_share
-        delta_k_list.append(delta_K_e)
+        delta_k_list[e] = delta_K_e
         # adjust the first key share
         share_mpc_e[0][0] = share_mpc_e[0][0] + delta_K_e
         # compute triple adjustments
         delta_c_e = sum_a_share * sum_b_share - sum_c_share
-        delta_c_list.append(delta_c_e)
+        delta_c_list[e] = delta_c_e
         # adjust the first triple share
-        share_mpc_e[0][B + 3] = share_mpc_e[0][B + 3] + delta_c_e
-        list_share_mpc.append(share_mpc_e)
+        share_mpc_e[0][ind_of_c] = share_mpc_e[0][ind_of_c] + delta_c_e
+        list_share_mpc[e] = share_mpc_e
         # compute residuosity symbols
-        temp_T_list = []
+        temp_T_list = [None] * B
         for b in range(B):
             pk_sum = 0
             for l in range(ell):
@@ -244,8 +250,8 @@ def DualRing_PRF_sign(pp, PK, msg, sk, ind):
                 else:
                     pk_sum = (pk_sum + PK[l][challenges[l][e][b]]) % t
             T_e_b = (compute_PRF(sum_r_shares_e[b], t, g, p) - pk_sum) % t
-            temp_T_list.append(T_e_b)
-        T.append(temp_T_list)
+            temp_T_list[b] = T_e_b
+        T[e] = temp_T_list
     # define first round message
     sigma_1 = [com_mask_sd_list, com_mpc_sd_list, T, delta_k_list, delta_c_list]
     print("Phase 1 running time: {} seconds".format(time.time() - st))
@@ -276,49 +282,52 @@ def DualRing_PRF_sign(pp, PK, msg, sk, ind):
     # expand real signer's challenge
     output = expand_to_index_elements(user_ch[ind], B * tau, L)
     challenges[ind] = [output[i:i + B] for i in range(0, len(output), B)]
-    acc = []
-    delta_I_pi = []
-    acc_tree = []
-    perm_tree = []
-    permuted_user_ind = []
-    permuted_com_delta = []
+    acc = [None] * tau
+    delta_I_pi = [None] * tau
+    acc_tree = [None] * tau
+    perm_tree = [None] * tau
+    permuted_user_ind = [None] * tau
+    permuted_com_delta = [None] * tau
+    user_ind = [j for j in range(ell)]
     for e in range(tau):
-        delta_I_pi_e = []
-        acc_e = []
-        acc_tree_e = []
+        delta_I_pi_e = [None] * M
+        acc_e = [None] * M
+        acc_tree_e = [None] * M
         sd_perm_e = os.urandom(16)
-        perm_e_tree = tree_based_PRG(sd_perm_e, log(M, 2), 16)
-        perm_tree.append(perm_e_tree)
-        permuted_user_ind_e = []
-        permuted_com_delta_e = []
+        perm_e_tree = tree_based_PRG(sd_perm_e, log_M, 16)
+        perm_tree[e] = perm_e_tree
+        permuted_user_ind_e = [None] * M
+        permuted_com_delta_e = [None] * M
         for k in range(M):
-            delta_I_e_k_pi = []
+            # delta_I_e_k_pi = []
             mask_e_k = Fp(0)
-            for i in range(N):
-                int_value = Integer(int.from_bytes(mask_share_tree_lists[e][k][log(N, 2)][i], byteorder='big'))
+            int_value = sum([int.from_bytes(mask_share_tree_lists[e][k][log_N][i], byteorder='big') for i in range(N)])
+            mask_e_k = Fp(int_value)
+            '''for i in range(N):
+                int_value = Integer(int.from_bytes(mask_share_tree_lists[e][k][log_N][i], byteorder='big'))
                 fp_element = Fp(int_value)
-                mask_e_k += fp_element
-            user_ind = []
-            com_delta_e_k = []
-            delta_I_e_k = []
+                mask_e_k += fp_element'''
+            # user_ind = [None] * ell
+            com_delta_e_k = [None] * ell
+            delta_I_e_k = [None] * ell
             for j in range(ell):
-                delta_I_e_k_j = []  # a list of B Fp elements
+                delta_I_e_k_j = [None] * B  # a list of B Fp elements
                 for b in range(B):
-                    delta_I_e_k_j.append(listI[challenges[j][e][b]] - mask_e_k)
-                delta_I_e_k.append(delta_I_e_k_j)
+                    delta_I_e_k_j[b] = listI[challenges[j][e][b]] - mask_e_k
+                delta_I_e_k[j] = delta_I_e_k_j
                 # elta_I_e_k_pi = [item for item in delta_I_e_k_j[ind]]
                 # commit to offsets
                 string = list_to_string(delta_I_e_k_j)
-                com_delta_e_k.append(hash_commit(salt, e, k, 0, string))
-                user_ind.append(j)
-            delta_I_e_k_pi = [item for item in delta_I_e_k[ind]] # make a copy of delta_I_e_k_pi
+                com_delta_e_k[j] = hash_commit(salt, e, k, 0, string)
+
+            delta_I_e_k_pi = [item for item in delta_I_e_k[ind]]  # make a copy of delta_I_e_k_pi
             # randomly sample a permutation seed
             # permute the list
-            permuted_user_ind_e_k = seeded_permutation(user_ind.copy(), perm_e_tree[log(M, 2)][k])
-            permuted_user_ind_e.append(permuted_user_ind_e_k)
-            permuted_com_delta_e_k = seeded_permutation(com_delta_e_k.copy(), perm_e_tree[log(M, 2)][k])
+            permuted_user_ind_e_k = seeded_permutation(user_ind.copy(), perm_e_tree[log_M][k])
+            permuted_user_ind_e[k] = permuted_user_ind_e_k
+            permuted_com_delta_e_k = seeded_permutation(com_delta_e_k.copy(), perm_e_tree[log_M][k])
             # print(perm_e_tree[log(M, 2)][k])
-            permuted_com_delta_e.append(permuted_com_delta_e_k)
+            permuted_com_delta_e[k] = permuted_com_delta_e_k
             # accumulate the permuted commitments using Merkle tree
             # permuted_com_delta_e_k = []
             # for j in range(ell):
@@ -326,17 +335,17 @@ def DualRing_PRF_sign(pp, PK, msg, sk, ind):
             acc_e_k_tree, root_e_k = compute_merkle_root(permuted_com_delta_e_k, salt)
             # print(e, k, root_e_k)
             # print(e, k, permuted_com_delta_e_k)
-            acc_tree_e.append(acc_e_k_tree)
-            acc_e.append(root_e_k)
-            delta_I_pi_e.append(delta_I_e_k_pi)
+            acc_tree_e[k] = acc_e_k_tree
+            acc_e[k] = root_e_k
+            delta_I_pi_e[k] = delta_I_e_k_pi
         # combine M accumulators with hash function
-        delta_I_pi.append(delta_I_pi_e)
-        permuted_user_ind.append(permuted_user_ind_e)
+        delta_I_pi[e] = delta_I_pi_e
+        permuted_user_ind[e] = permuted_user_ind_e
         # print(acc_e)
         string = list_to_string(acc_e)
-        acc.append(hash_commit(salt, e, 0, 0, string))
-        acc_tree.append(acc_tree_e)
-        permuted_com_delta.append(permuted_com_delta_e)
+        acc[e] = hash_commit(salt, e, 0, 0, string)
+        acc_tree[e] = acc_tree_e
+        permuted_com_delta[e] = permuted_com_delta_e
     sigma_2 = acc
 
     print("Phase 2 running time: {} seconds".format(time.time() - st))
@@ -381,7 +390,7 @@ def DualRing_PRF_sign(pp, PK, msg, sk, ind):
         string += list_to_string(item)
     h_3 = get_challenge(string)
     # expand h_3 to get challenges for sacrificing protocol
-    sacrificing_challenge_list = expand_to_Fp_elements(h_3, tau * (B + 1), p, 16)
+    sacrificing_challenge_list = expand_to_Fp_elements(h_3, tau * (ind_of_a), p, 16)
     challenge_lambda = []
     for e in range(tau):
         challenge_lambda.append(sacrificing_challenge_list[e * B: (e + 1) * B])
@@ -413,7 +422,7 @@ def DualRing_PRF_sign(pp, PK, msg, sk, ind):
         real_z_e = Fp(0)
         fault_z_e = Fp(0)
         for i in range(N):
-            alpha_e_i = list_share_mpc[e][i][B + 1] + challenge_epsilon[e] * list_share_mpc[e][i][0]
+            alpha_e_i = list_share_mpc[e][i][ind_of_a] + challenge_epsilon[e] * list_share_mpc[e][i][0]
             temp_list_alpha_e_i.append(alpha_e_i)
             alpha_e += alpha_e_i
             sum_e_i_lambda_r = Fp(0)
@@ -424,16 +433,19 @@ def DualRing_PRF_sign(pp, PK, msg, sk, ind):
                 lambda_r_e_i_b = list_share_mpc[e][i][b + 1] * challenge_lambda[e][b]
                 sum_e_i_lambda_r += lambda_r_e_i_b
                 if i == 0:
-                    share_I_e_i_b = Fp(Integer(int.from_bytes(mask_share_tree_lists[e][unopened_M[e]][log(N, 2)][i], byteorder='big'))) + delta_I_pi[e][unopened_M[e]][b]
+                    share_I_e_i_b = Fp(
+                        Integer(int.from_bytes(mask_share_tree_lists[e][unopened_M[e]][log_N][i], byteorder='big'))) + \
+                                    delta_I_pi[e][unopened_M[e]][b]
                 else:
                     share_I_e_i_b = Fp(
-                        Integer(int.from_bytes(mask_share_tree_lists[e][unopened_M[e]][log(N, 2)][i], byteorder='big')))
+                        Integer(int.from_bytes(mask_share_tree_lists[e][unopened_M[e]][log_N][i], byteorder='big')))
                 share_I_e_i.append(share_I_e_i_b)
                 sum_lambda_r_I_e -= challenge_lambda[e][b] * list_share_mpc[e][i][b + 1] * share_I_e_i_b
-                real_sum_lambda_r_I_e -= challenge_lambda[e][b] * list_share_mpc[e][i][b + 1] * listI[challenges[ind][e][b]]
+                real_sum_lambda_r_I_e -= challenge_lambda[e][b] * list_share_mpc[e][i][b + 1] * listI[
+                    challenges[ind][e][b]]
             z_e_i = sum_lambda_r_I_e
             real_z_e_i = real_sum_lambda_r_I_e
-            beta_e_i = list_share_mpc[e][i][B + 2] + sum_e_i_lambda_r
+            beta_e_i = list_share_mpc[e][i][ind_of_b] + sum_e_i_lambda_r
             temp_list_beta_e_i.append(beta_e_i)
             beta_e += beta_e_i
             if i == 0:
@@ -448,7 +460,8 @@ def DualRing_PRF_sign(pp, PK, msg, sk, ind):
         gamma_e = 0
         for i in range(N):
             # compute gamma
-            gamma_e_i = alpha_e * list_share_mpc[e][i][B + 2] + beta_e * list_share_mpc[e][i][B + 1] - list_share_mpc[e][i][B + 3] + challenge_epsilon[e] * z_e[i]
+            gamma_e_i = alpha_e * list_share_mpc[e][i][ind_of_b] + beta_e * list_share_mpc[e][i][ind_of_a] - \
+                        list_share_mpc[e][i][ind_of_c] + challenge_epsilon[e] * z_e[i]
             gamma_e += gamma_e_i
             temp_list_gamma_e_i.append(gamma_e_i)
         list_alpha_e.append(alpha_e)
@@ -538,7 +551,6 @@ def DualRing_PRF_sign(pp, PK, msg, sk, ind):
 
     total_bits = 0
 
-
     for items in sig.values():
         if isinstance(items, bytes):
             bits = len(items) * 8
@@ -560,11 +572,7 @@ def DualRing_PRF_sign(pp, PK, msg, sk, ind):
                 else:
                     total_bits += Integer(item).bit_length()
     print("Signature size is (bits)", total_bits)
-    print('-'*50)
-
-
-
-
+    print('-' * 50)
 
     return sig
 
@@ -606,7 +614,8 @@ def DualRing_PRF_verify(pp, PK, msg, sig):
     com_sd_mpc = sig.get("com_sd_mpc")
     com_sd_mask = sig.get("com_sd_mask")
     user_ch = sig.get("user_ch")
-
+    # log_M = log(M, 2)
+    log_N = log(N, 2)
     challenges = []
     for j in range(ell):
         output = expand_to_index_elements(user_ch[j], tau * B, L)
@@ -625,17 +634,17 @@ def DualRing_PRF_verify(pp, PK, msg, sig):
         challenge_lambda.append(sacrificing_challenge_list[e * B: (e + 1) * B])
     challenge_epsilon = sacrificing_challenge_list[tau * B:]
     unopened_N = expand_to_index_elements(h_4, tau, N)
-    acc = []
-    com_mask_share = []
-    com_mpc_sd = []
-    T = []
-    list_alpha_e_i = []
-    list_beta_e_i = []
-    list_gamma_e_i = []
+    acc = [None] * tau
+    com_mask_share = [None] * tau
+    com_mpc_sd = [None] * tau
+    T = [None] * tau
+    list_alpha_e_i = [None] * tau
+    list_beta_e_i = [None] * tau
+    list_gamma_e_i = [None] * tau
     for e in range(tau):
-        temp_alpha_e_i = []
-        temp_beta_e_i = []
-        temp_gamma_e_i = []
+        temp_alpha_e_i = [None] * N
+        temp_beta_e_i = [None] * N
+        temp_gamma_e_i = [None] * N
         # get N - 1 MPC party seeds from path_seed_mpc
         mpc_seed_e = tree_based_PRG_recompute(unopened_N[e], path_seed_mpc[e], 16)
         mpc_seed_e.insert(unopened_N[e], b'')
@@ -647,32 +656,32 @@ def DualRing_PRF_verify(pp, PK, msg, sig):
             sum_lambda_o += challenge_lambda[e][b] * o[e][b]
         alpha_e_bar = Fp(0)
         beta_e_bar = Fp(0)
-        share_mpc_e = []
-        z_e = []
-        com_mpc_sd_e = []
-        com_mask_share_e_k_bar = []
+        share_mpc_e = [None] * N
+        z_e = [None] * N
+        com_mpc_sd_e = [None] * N
+        com_mask_share_e_k_bar = [None] * N
         # print(mpc_seed_e)
         for i in range(N):
             if i == unopened_N[e]:
-                share_mpc_e.append([])
-                z_e.append(Fp(0))
-                com_mpc_sd_e.append(com_sd_mpc[e])
-                com_mask_share_e_k_bar.append(com_sd_mask[e])
-                temp_alpha_e_i.append([])
-                temp_beta_e_i.append([])
+                # share_mpc_e.append([])
+                # z_e.append(Fp(0))
+                com_mpc_sd_e[i] = com_sd_mpc[e]
+                com_mask_share_e_k_bar[i] = com_sd_mask[e]
+                # temp_alpha_e_i.append([])
+                # temp_beta_e_i.append([])
             else:
                 # each share [0]: key share; [1],...,[B]: randomness share; [B + 1] share of a; [B + 2] share of b; [B + 3] share of c
                 share_mpc = expand_to_Fp_elements(mpc_seed_e[i], B + 4, p, 16)
 
                 # recompute the mpc seed commitment and mask commitment
                 com_mpc_sd_e_i = hash_commit(salt, e, 0, i, mpc_seed_e[i])
-                com_mpc_sd_e.append(com_mpc_sd_e_i)
+                com_mpc_sd_e[i] = com_mpc_sd_e_i
                 com_mask_share_e_k_bar_i = hash_commit(salt, e, unopened_M[e], i, mask_share_e[i])
-                com_mask_share_e_k_bar.append(com_mask_share_e_k_bar_i)
+                com_mask_share_e_k_bar[i] = com_mask_share_e_k_bar_i
                 if i == 0:
                     share_mpc[0] = share_mpc[0] + delta_k_list[e]
                     share_mpc[B + 3] = share_mpc[B + 3] + delta_c_list[e]
-                share_mpc_e.append(share_mpc)
+                share_mpc_e[i] = share_mpc
                 sum_lambda_r_e = Fp(0)
                 sum_lambda_r_I_e = Fp(0)
                 for b in range(B):
@@ -685,16 +694,16 @@ def DualRing_PRF_verify(pp, PK, msg, sig):
                     sum_lambda_r_I_e -= challenge_lambda[e][b] * share_mpc[b + 1] * share_I_e_i_b
                 # recompute sacrificing shares
                 alpha_e_i = share_mpc[B + 1] + challenge_epsilon[e] * share_mpc[0]
-                temp_alpha_e_i.append(alpha_e_i)
+                temp_alpha_e_i[i] = alpha_e_i
                 beta_e_i = share_mpc[B + 2] + sum_lambda_r_e
-                temp_beta_e_i.append(beta_e_i)
+                temp_beta_e_i[i] = beta_e_i
                 alpha_e_bar += alpha_e_i
                 beta_e_bar += beta_e_i
                 z_e_i = sum_lambda_r_I_e
                 if i == 0:
                     z_e_i = z_e_i + sum_lambda_o
                     z_e_i = z_e_i + delta_z[e]
-                z_e.append(z_e_i)
+                z_e[i] = z_e_i
         sum_gamma_bar = Fp(0)
         for i in range(N):
             if i == unopened_N[e]:
@@ -702,72 +711,72 @@ def DualRing_PRF_verify(pp, PK, msg, sig):
             else:
                 gamma_e_i = list_alpha_e[e] * share_mpc_e[i][B + 2] + list_beta_e[e] * share_mpc_e[i][B + 1] - share_mpc_e[i][B + 3] + challenge_epsilon[e] * z_e[i]
                 sum_gamma_bar += gamma_e_i
-            temp_gamma_e_i.append(gamma_e_i)
+            temp_gamma_e_i[i] = gamma_e_i
         # compute missing share
         temp_alpha_e_i[unopened_N[e]] = list_alpha_e[e] - alpha_e_bar
         temp_beta_e_i[unopened_N[e]] = list_beta_e[e] - beta_e_bar
         temp_gamma_e_i[unopened_N[e]] = list_alpha_e[e] * list_beta_e[e] - sum_gamma_bar
         T_e = []
-        list_alpha_e_i.append(temp_alpha_e_i)
-        list_beta_e_i.append(temp_beta_e_i)
-        list_gamma_e_i.append(temp_gamma_e_i)
+        list_alpha_e_i[e] = temp_alpha_e_i
+        list_beta_e_i[e] = temp_beta_e_i
+        list_gamma_e_i[e] = temp_gamma_e_i
         for b in range(B):
             pk_e_b = 0
             for j in range(ell):
                 pk_e_b = (pk_e_b + PK[j][challenges[j][e][b]]) % t
             T_e_b = (compute_PRF(o[e][b], t, g, p) - pk_e_b) % t
             T_e.append(T_e_b)
-        T.append(T_e)
+        T[e] = T_e
         # recompute permutation seeds
         perm_rand = tree_based_PRG_recompute(unopened_M[e], path_perm[e], 16)
         # print(unopened_M[e])
         mask_seed = tree_based_PRG_recompute(unopened_M[e], path_seed_mask[e], 16)
         perm_rand.insert(unopened_M[e], b'')
         mask_seed.insert(unopened_M[e], b'')
-        permuted_com_delta_e = []
-        acc_e = []
-        com_mask_share_e = []
+        permuted_com_delta_e = [None] * M
+        acc_e = [None] * M
+        com_mask_share_e = [None] * M
         for k in range(M):
-            com_mask_share_e_k = []
+            com_mask_share_e_k = [None] * N
             if k == unopened_M[e]:
-                com_mask_share_e.append(com_mask_share_e_k_bar)
+                com_mask_share_e[k] = com_mask_share_e_k_bar
             else:
                 # compute all mask shares from mask seed
                 # mask_share_tree_list.append(tree_based_PRG(sd_mask_e_tree[log(M, 2)][k], log(N, 2), 16))
-                mask_shares_e_k = tree_based_PRG(mask_seed[k], log(N, 2), 16)
+                mask_shares_e_k = tree_based_PRG(mask_seed[k], log_N, 16)
                 mask_e_k = Fp(0)
                 for i in range(N):
-                    com_mask_share_e_k.append(hash_commit(salt, e, k, i, mask_shares_e_k[log(N, 2)][i]))
-                    mask_e_k += Fp(Integer(int.from_bytes(mask_shares_e_k[log(N, 2)][i], byteorder='big')))
-                com_mask_share_e.append(com_mask_share_e_k)
-                user_ind = []
-                com_delta_e_k = []
+                    com_mask_share_e_k[i] = hash_commit(salt, e, k, i, mask_shares_e_k[log_N][i])
+                    mask_e_k += Fp(Integer(int.from_bytes(mask_shares_e_k[log_N][i], byteorder='big')))
+                com_mask_share_e[k] = com_mask_share_e_k
+                #user_ind = []
+                com_delta_e_k = [None] * ell
                 for j in range(ell):
                     delta_I_e_k_j = []
-                    user_ind.append(j)
+                    #user_ind.append(j)
                     for b in range(B):
                         delta_I_e_k_j.append(listI[challenges[j][e][b]] - mask_e_k)
                     string = list_to_string(delta_I_e_k_j)
-                    com_delta_e_k.append(hash_commit(salt, e, k, 0, string))
+                    com_delta_e_k[j] = hash_commit(salt, e, k, 0, string)
 
                 permuted_com_delta_e_k = seeded_permutation(com_delta_e_k.copy(), perm_rand[k]) # throw index out of range
                 # print(perm_rand[k])
 
-                permuted_com_delta_e.append(permuted_com_delta_e_k)
+                permuted_com_delta_e[k] = permuted_com_delta_e_k
                 # print(e,k,permuted_com_delta_e_k)
                 acc_e_k_tree, root_e_k = compute_merkle_root(permuted_com_delta_e_k, salt)
-                acc_e.append(root_e_k)
+                acc_e[k] = root_e_k
                 # print(e, k, root_e_k)
         # print(len(com_mask_share_e))
         string = list_to_string(delta_I[e])
         com_delta_I_e_k_bar = hash_commit(salt, e, unopened_M[e], 0, string)
         acc_e_k_bar = recompute_MT_root(com_delta_I_e_k_bar, salt, MT_proof[e], MT_index[e], ell)
         # print(acc_e_k_bar)
-        acc_e.insert(unopened_M[e], acc_e_k_bar)
+        acc_e[unopened_M[e]] = acc_e_k_bar
         string = list_to_string(acc_e)
-        acc.append(hash_commit(salt, e, 0, 0, string))
-        com_mask_share.append(com_mask_share_e)
-        com_mpc_sd.append(com_mpc_sd_e)
+        acc[e] = hash_commit(salt, e, 0, 0, string)
+        com_mask_share[e] = com_mask_share_e
+        com_mpc_sd[e] = com_mpc_sd_e
 
     h_1_prime = reduce(lambda x, y: bytes(a ^ b for a, b in zip(x, y)), user_ch)
     h_1_prime = h_1_prime + h_1_second_half
@@ -806,6 +815,8 @@ def DualRing_PRF_verify(pp, PK, msg, sig):
     print("Verification running time: {} seconds".format(time.time() - st))
     print('-' * 50)
 
+
+
 def main():
     # 1: Legendre fast
     # 2: Legendre medium
@@ -815,7 +826,7 @@ def main():
     # 6: power residue slow
     # 7: test set with small but insecure parameters
 
-    pp = DualRing_PRF_setup(4)
+    pp = DualRing_PRF_setup(6)
     # key1 = DualRing_PRF_KeyGen(pp)
     key2 = DualRing_PRF_KeyGen(pp)
     # key3 = DualRing_PRF_KeyGen(pp)
