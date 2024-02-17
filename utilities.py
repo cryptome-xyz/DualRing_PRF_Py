@@ -60,17 +60,19 @@ def tree_based_PRG(seed, depth, output_bytes):
     :param output_bytes: the output_length of the tree
     :return: the dictionary of the tree with index being the level and value being the 2^level values
     """
-    if isinstance(seed, bytes):
+    '''if isinstance(seed, bytes):
         tree = {0: seed}  # level 0 root seed as bytes
     elif isinstance(seed, int):
         tree = {0: repr(seed).encode('utf-8')}
     else:
-        tree = {0: seed.encode('utf-8')}
+        tree = {0: seed.encode('utf-8')}'''
+    tree = {0: seed}
     for level in range(depth):
         values = []
         for i in range(2 ** level):
             parent = tree[level][i]
-            left_child, right_child = shake_128_func(parent, 2 * output_bytes)[:16], shake_128_func(parent, 2 * output_bytes)[16:]
+            children = shake_128_func(parent, 2 * output_bytes)
+            left_child, right_child = children[:16], children[16:]
             values.extend([left_child, right_child])
         tree[level + 1] = values
     return tree
@@ -112,7 +114,8 @@ def tree_based_PRG_recompute(index, path, output_bytes):
             values = [path[expand_time]]
             for i in range(2 ** expand_time - 1):
                 parent = values[i]
-                left_child, right_child = shake_128_func(parent, 2 * output_bytes)[:16], shake_128_func(parent, 2 * output_bytes)[16:]
+                children = shake_128_func(parent, 2 * output_bytes)
+                left_child, right_child = children[:16], children[16:]
                 values.extend([left_child, right_child])
             if ind % 2 == 0:
                 output.append(values[2 ** expand_time - 1:])
@@ -136,11 +139,11 @@ def expand_to_Fp_elements(sd, num_elements, p, output_bytes):
     """
     output = shake_128_func(sd, num_elements * output_bytes)
     Fp = GF(p)
-    result = []
+    result = [None] * num_elements
     for i in range(num_elements):
         element = output[i * 16: (i + 1) * 16]
         integer_value = int.from_bytes(element, byteorder='big')
-        result.append(Fp(integer_value))
+        result[i] = Fp(integer_value)
 
     return result
 
@@ -161,11 +164,11 @@ def expand_to_index_elements(sd, num, length):
     byte_length = ceil(bit_length * num / 8)
     output = shake_128_func(sd, byte_length)
     bit_out = bin(int.from_bytes(output, byteorder='big'))[2: num * bit_length]
-    result = []
+    result = [None] * num
     # convert every bit_length bits to an integer
     for i in range(num):
         element = bit_out[i * bit_length: (i + 1) * bit_length]
-        result.append(int(element, 2))
+        result[i] = int(element, 2)
 
     return result
 
@@ -192,9 +195,9 @@ def seeded_permutation(input, sd=None):
 def compute_merkle_root(data, randomness):
     # expand randomness to a rand_list with the same length as data
     rand = shake_128_func(randomness, len(data) * 16)
-    rand_list = []
-    for i in range(len(data)):
-        rand_list.append(rand[i * 16: (i + 1) * 16])
+    rand_list = [rand[i * 16: (i + 1) * 16] for i in range(len(data))]
+    # for i in range(len(data)):
+        # rand_list.append(rand[i * 16: (i + 1) * 16])
     if len(data) % 2 == 1:
         data.append(data[-1])
         rand_list.append(rand_list[-1])
