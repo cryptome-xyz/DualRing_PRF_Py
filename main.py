@@ -18,47 +18,58 @@ def DualRing_PRF_setup(param_choice):
     # get program start time
     st = time.time()
     if param_choice == 1:
-        B = 13
+        B = 10
         N = 16
-        tau = 57
+        tau = 74
+        M = 128
         t = 2
         L = 32768
+
     elif param_choice == 2:
         B = 10
         N = 64
-        tau = 51
+        tau = 58
+        M = 256
         t = 2
         L = 32768
+
     elif param_choice == 3:
-        B = 10
-        N = 512
-        tau = 45
+        B = 12
+        N = 256
+        tau = 46
+        M = 512
         t = 2
         L = 32768
+
     elif param_choice == 4:
-        B = 7
+        B = 5
         N = 16
-        tau = 46
+        tau = 59
+        M = 128
         t = 254
         L = 4096
+
     elif param_choice == 5:
-        B = 9
+        B = 6
         N = 64
-        tau = 34
+        tau = 43
+        M = 256
         t = 254
         L = 4096
     elif param_choice == 6:
-        B = 10
+        B = 7
         N = 256
-        tau = 27
+        tau = 34
+        M = 512
         t = 254
         L = 4096
     elif param_choice == 7:
-        B = 4
+        B = 7
         N = 8
-        tau = 3
+        tau = 34
         t = 254
         L = 1024
+        M = 16
     else:
         print("Invalid Choice")
         sys.exit()
@@ -66,9 +77,8 @@ def DualRing_PRF_setup(param_choice):
     p = 2 ** 127 - 1
     Fp = GF(p)
     g = Fp.primitive_element()
-    M = 512
-    if param_choice == 7:
-        M = 16
+    print(g)
+    # M = 512
     listI = []
     for i in range(L):
         listI.append(Fp.random_element())
@@ -125,7 +135,6 @@ def DualRing_PRF_sign(pp, PK, msg, sk, ind):
     #######################################################
     # Preparation before signing                          #
     #######################################################
-    total_bits = 0
     # obtain parameters from pp
     # sec_param = pp.get("sec_param")
     p = pp.get("p")
@@ -153,13 +162,13 @@ def DualRing_PRF_sign(pp, PK, msg, sk, ind):
     salt = os.urandom(32)
     # pick random challenges for non-signers
     user_ch = [None] * ell
-    challenges = [
-                     None] * ell  # ell lists of challenges, where each list has tau lists, where each list has B indices in [0,L-1]
+    # ell lists of challenges, where each list has tau lists, where each list has B indices in [0,L-1]
+    challenges = [None] * ell
     for l in range(ell):
-        if l == ind:
-            user_ch[l] = b''
-            challenges[l] = []
-        else:
+        # if l == ind:
+            # user_ch[l] = b''
+            # challenges[l] = []
+        if l != ind:
             user_random_seed = os.urandom(16)
             user_ch[l] = user_random_seed
             output = expand_to_index_elements(user_random_seed, tau * B, L)
@@ -188,11 +197,13 @@ def DualRing_PRF_sign(pp, PK, msg, sk, ind):
         # expand sd_mask_e
         sd_mask_e_tree = tree_based_PRG(sd_mask_e, log_M, 16)  # leafs are at log(M,2) index
         mask_tree[e] = sd_mask_e_tree
+        # print(sd_mask_e_tree)
         mask_share_tree_list = [None] * M  # a list of M trees, where each tree has N leaves
         for k in range(M):
             mask_share_tree_list[k] = tree_based_PRG(sd_mask_e_tree[log_M][k], log_N, 16)
             # print(mask_share_tree_list[k][log(N, 2)])
         mask_share_tree_lists[e] = mask_share_tree_list
+        # print(mask_share_tree_list)
         # sample MPC root seed
         sd_mpc_e = os.urandom(16)
         # expand sd_mpc with leaves N
@@ -223,8 +234,7 @@ def DualRing_PRF_sign(pp, PK, msg, sk, ind):
             # commit to mask shares
             temp_com_mask_list2 = [None] * M
             for k in range(M):
-                sd_mask = mask_share_tree_list[k][log_N][i]
-                temp_com_mask_list2[k] = hash_commit(salt, e, k, i, sd_mask)
+                temp_com_mask_list2[k] = hash_commit(salt, e, k, i, mask_share_tree_list[k][log_N][i])
             temp_com_mask_list1[i] = temp_com_mask_list2
         com_mpc_sd_list[e] = temp_com_mpc_sd_list
         com_mask_sd_list[e] = temp_com_mask_list1
@@ -300,7 +310,6 @@ def DualRing_PRF_sign(pp, PK, msg, sk, ind):
         permuted_com_delta_e = [None] * M
         for k in range(M):
             # delta_I_e_k_pi = []
-            mask_e_k = Fp(0)
             int_value = sum([int.from_bytes(mask_share_tree_lists[e][k][log_N][i], byteorder='big') for i in range(N)])
             mask_e_k = Fp(int_value)
             '''for i in range(N):
@@ -549,29 +558,32 @@ def DualRing_PRF_sign(pp, PK, msg, sk, ind):
     print("Signing running time: {} seconds".format(time.time() - sign_time))
     print('-' * 50)
 
-    total_bits = 0
-
-    for items in sig.values():
-        if isinstance(items, bytes):
-            bits = len(items) * 8
-            total_bits += bits
-        else:
-            for item in items:
-                if isinstance(item, bytes):
-                    bits = len(item) * 8
-                    total_bits += bits
-                elif isinstance(item, list):
-                    bits = get_bit_length_of_list(item)
-                    total_bits += bits
-                elif isinstance(item, int):
-                    bits = item.bit_length()
-                    total_bits += bits
-                elif isinstance(item, dict):
-                    bits = get_bit_length_of_dict(item)
-                    total_bits += bits
-                else:
-                    total_bits += Integer(item).bit_length()
-    print("Signature size is (bits)", total_bits)
+    total_bytes = 0
+    total_bytes += len(salt)
+    total_bytes += len(h_1_second_half)
+    total_bytes += len(h_2)
+    total_bytes += len(h_4)
+    for item in path_perm:
+        total_bytes += get_byte_length_of_dict(item)
+    for item in path_seed_mask:
+        total_bytes += get_byte_length_of_dict(item)
+    for item in path_mask_share:
+        total_bytes += get_byte_length_of_dict(item)
+    for item in path_seed_mpc:
+        total_bytes += get_byte_length_of_dict(item)
+    total_bytes += get_byte_length_of_list(MT_index)
+    total_bytes += get_byte_length_of_list(MT_proof)
+    total_bytes += get_byte_length_of_list(delta_k_list)
+    total_bytes += get_byte_length_of_list(delta_c_list)
+    total_bytes += get_byte_length_of_list(o)
+    total_bytes += get_byte_length_of_list(delta_I)
+    total_bytes += get_byte_length_of_list(list_alpha_e)
+    total_bytes += get_byte_length_of_list(list_beta_e)
+    total_bytes += get_byte_length_of_list(delta_z)
+    total_bytes += get_byte_length_of_list(com_sd_mpc)
+    total_bytes += get_byte_length_of_list(com_sd_mask)
+    total_bytes += get_byte_length_of_list(user_ch)
+    print("Signature size (bytes):", total_bytes)
     print('-' * 50)
 
     return sig
@@ -752,10 +764,10 @@ def DualRing_PRF_verify(pp, PK, msg, sig):
                 #user_ind = []
                 com_delta_e_k = [None] * ell
                 for j in range(ell):
-                    delta_I_e_k_j = []
+                    delta_I_e_k_j = [None] * B
                     #user_ind.append(j)
                     for b in range(B):
-                        delta_I_e_k_j.append(listI[challenges[j][e][b]] - mask_e_k)
+                        delta_I_e_k_j[b] = listI[challenges[j][e][b]] - mask_e_k
                     string = list_to_string(delta_I_e_k_j)
                     com_delta_e_k[j] = hash_commit(salt, e, k, 0, string)
 
@@ -825,20 +837,18 @@ def main():
     # 5: power residue medium
     # 6: power residue slow
     # 7: test set with small but insecure parameters
-
-    pp = DualRing_PRF_setup(6)
-    # key1 = DualRing_PRF_KeyGen(pp)
-    key2 = DualRing_PRF_KeyGen(pp)
-    # key3 = DualRing_PRF_KeyGen(pp)
-    # key4 = DualRing_PRF_KeyGen(pp)
-
-    ell = 8
+    print("Enter the choice of parameter: ")
+    choice = int(input())
+    print("Enter the choice of ring size: ")
+    ell = int(input())
+    pp = DualRing_PRF_setup(choice)
+    key = DualRing_PRF_KeyGen(pp)
     PK = []
     for i in range(ell):
-        PK.append(key2[1])
+        PK.append(key[1])
 
     msg = "Hello World"
-    sig = DualRing_PRF_sign(pp, PK, msg, key2[0], 1)
+    sig = DualRing_PRF_sign(pp, PK, msg, key[0], 1)
     DualRing_PRF_verify(pp, PK, msg, sig)
 
 
